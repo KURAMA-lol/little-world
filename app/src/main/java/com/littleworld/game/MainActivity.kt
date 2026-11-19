@@ -3,6 +3,7 @@ package com.littleworld.game
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -51,7 +52,7 @@ enum class BuildTool(val title:String,val icon:androidx.compose.ui.graphics.vect
 }
 enum class Activity(val label:String) { IDLE("Wandering"), WORK("Working"), EAT("Eating"), REST("Resting"), SOCIAL("Socialising"), FOLLOW("Following you") }
 data class Structure(val x:Int,val y:Int,val kind:BuildTool)
-data class Citizen(var name:String,var job:String,var x:Float,var y:Float,var hunger:Float=.9f,var energy:Float=.9f,var happiness:Float=.8f,var action:Activity=Activity.IDLE)
+data class Citizen(var name:String,var job:String,var x:Float,var y:Float,var hunger:Float=.9f,var energy:Float=.9f,var happiness:Float=.8f,var action:Activity=Activity.IDLE,var targetX:Float=x,var targetY:Float=y)
 
 @Composable fun LittleWorld() {
  val ctx=androidx.compose.ui.platform.LocalContext.current
@@ -80,7 +81,7 @@ data class Citizen(var name:String,var job:String,var x:Float,var y:Float,var hu
       Activity.EAT -> p.hunger=(p.hunger+.18f).coerceAtMost(1f)
       Activity.REST -> p.energy=(p.energy+.16f).coerceAtMost(1f)
       Activity.SOCIAL -> p.happiness=(p.happiness+.12f).coerceAtMost(1f)
-      else -> { p.x=(p.x+listOf(-.10f,.08f,.13f,-.06f).random()).coerceIn(1f,22f); p.y=(p.y+listOf(-.08f,.07f,.1f,-.05f).random()).coerceIn(1f,16f) }
+      else -> { val dx=p.targetX-p.x; val dy=p.targetY-p.y; val distance=hypot(dx,dy); if(distance<.22f){p.targetX=(2..24).random().toFloat();p.targetY=(2..24).random().toFloat()} else {val step=.16f;p.x=(p.x+dx/distance*step).coerceIn(1f,28f);p.y=(p.y+dy/distance*step).coerceIn(1f,28f)} }
      }
      if(p.action!=Activity.EAT) p.hunger=(p.hunger-.006f).coerceAtLeast(0f)
      if(p.action!=Activity.REST && p.action!=Activity.WORK) p.energy=(p.energy-.004f).coerceAtLeast(0f)
@@ -97,8 +98,8 @@ data class Citizen(var name:String,var job:String,var x:Float,var y:Float,var hu
    }
   }
  }
- Box(Modifier.fillMaxSize().background(Forest)) {
-  Column(Modifier.fillMaxSize().padding(10.dp)) {
+ Box(Modifier.fillMaxSize().background(Color(0xFF172B23))) {
+  Column(Modifier.fillMaxSize().padding(horizontal=14.dp, vertical=12.dp)) {
    Row(Modifier.fillMaxWidth().padding(bottom=8.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
     Row(verticalAlignment=Alignment.CenterVertically) {
      Surface(color=Color(0xFFDCE9CF),shape=RoundedCornerShape(12.dp)) { Icon(Icons.Default.Public,null,tint=Leaf,modifier=Modifier.padding(9.dp).size(22.dp)) }
@@ -110,7 +111,7 @@ data class Citizen(var name:String,var job:String,var x:Float,var y:Float,var hu
     }
    }
    Row(Modifier.weight(1f),horizontalArrangement=Arrangement.spacedBy(9.dp)) {
-    Column(Modifier.width(158.dp).fillMaxHeight().clip(RoundedCornerShape(17.dp)).background(Paper).padding(10.dp)) {
+    Column(Modifier.width(174.dp).fillMaxHeight().clip(RoundedCornerShape(20.dp)).background(Brush.verticalGradient(listOf(Color(0xFFFAF8F0),Color(0xFFE9EBDD)))).padding(12.dp)) {
      Text("SETTLEMENT",color=Leaf,fontSize=9.sp,fontWeight=FontWeight.Black,letterSpacing=1.sp)
      Text(stage.lowercase().replaceFirstChar{it.uppercase()},color=Forest,fontSize=21.sp,fontWeight=FontWeight.ExtraBold)
      Text(goal,color=Color(0xFF68756B),fontSize=9.sp,lineHeight=12.sp)
@@ -124,7 +125,7 @@ data class Citizen(var name:String,var job:String,var x:Float,var y:Float,var hu
      }
      Text(message,color=Color(0xFF68756B),fontSize=8.sp,lineHeight=11.sp)
     }
-    Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(17.dp))) {
+    Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(20.dp)).background(Color(0xFF8FB88C))) {
      IsometricMap(buildings,citizens,selected,tool,onTap={x,y->
       if(tool==BuildTool.SELECT) {
        if(citizens.isNotEmpty()) { selected=citizens.indices.minByOrNull { hypot(citizens[it].x-x,citizens[it].y-y) } ?: 0; message="${citizens[selected].name} • ${citizens[selected].job}" }
@@ -141,7 +142,7 @@ data class Citizen(var name:String,var job:String,var x:Float,var y:Float,var hu
       MiniButton(Icons.Default.Speed){speed=if(speed==1) 2 else if(speed==2) 4 else 1;message="Simulation speed: ${speed}x"}
      }
     }
-    Column(Modifier.width(185.dp).fillMaxHeight().clip(RoundedCornerShape(17.dp)).background(Paper).padding(10.dp)) {
+    Column(Modifier.width(198.dp).fillMaxHeight().clip(RoundedCornerShape(20.dp)).background(Brush.verticalGradient(listOf(Color(0xFFFAF8F0),Color(0xFFE9EBDD)))).padding(12.dp)) {
      Text("PEOPLE & LIFE",color=Leaf,fontSize=10.sp,fontWeight=FontWeight.Black,letterSpacing=1.sp)
      Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { MiniStat("PEOPLE",population.toString()); MiniStat("HOMES",homes.toString()); MiniStat("JOBS",buildings.count{it.kind==BuildTool.WORKSHOP}.toString()) }
      Divider(Modifier.padding(vertical=7.dp),color=Color(0xFFDDE1D8))
@@ -195,6 +196,7 @@ data class Citizen(var name:String,var job:String,var x:Float,var y:Float,var hu
 @Composable fun IsometricMap(buildings:List<Structure>,people:List<Citizen>,selected:Int,tool:BuildTool,onTap:(Float,Float)->Unit) {
  var zoom by remember { mutableFloatStateOf(.9f) }
  var pan by remember { mutableStateOf(Offset.Zero) }
+ val walk by rememberInfiniteTransition(label="resident-walk").animateFloat(initialValue=0f,targetValue=(2f*PI.toFloat()),animationSpec=infiniteRepeatable(tween(520,easing=LinearEasing)),label="walk-cycle")
  Canvas(Modifier.fillMaxSize()
   .pointerInput(Unit) { detectTransformGestures { _,delta,z,_ -> zoom=(zoom*z).coerceIn(.55f,2.5f); pan+=delta } }
   .pointerInput(tool,zoom,pan) { detectTapGestures { point ->
@@ -204,7 +206,9 @@ data class Citizen(var name:String,var job:String,var x:Float,var y:Float,var hu
    onTap((dx/tw+dy/th+15f)/2f,(dy/th-dx/tw+15f)/2f)
   } }
  ) {
-  drawRect(Brush.verticalGradient(listOf(Color(0xFFBBD7C4),Color(0xFF88B092),Color(0xFF719B7D))))
+  drawRect(Brush.verticalGradient(listOf(Color(0xFFB9D8C5),Color(0xFF92BC91),Color(0xFF648D70))))
+  // Soft distant woodland and atmospheric horizon
+  for(i in 0..18){val x=size.width*i/18f;val h=(18+(i*17%31)).dp.toPx();drawCircle(Color(0x44709B76),h,Offset(x,size.height*.13f))}
   val center=Offset(size.width/2f,size.height/2f)
   withTransform({ translate(pan.x,pan.y); scale(zoom,zoom,center) }) {
    val tw=size.width/26f; val th=tw*.5f; val cx=size.width*.51f; val cy=size.height*.48f
@@ -218,9 +222,9 @@ data class Citizen(var name:String,var job:String,var x:Float,var y:Float,var hu
     drawPath(path,Color(0x1E55734F),style=Stroke(.7.dp.toPx()))
    }
    // creek and crossing
-   for(y in 0..29) { val c=iso(27f,y.toFloat());drawOval(Color(0xFF72B7C3),Offset(c.x-tw*.25f,c.y),Size(tw*.5f,th*.52f)) }
+   for(y in 0..29) { val riverX=26.5f+sin(y*.31f)*1.1f; val c=iso(riverX,y.toFloat());drawOval(Color(0xFF4D9DAA),Offset(c.x-tw*.36f,c.y-th*.08f),Size(tw*.72f,th*.82f));drawOval(Color(0xFF83C7D0),Offset(c.x-tw*.22f,c.y+th*.04f),Size(tw*.44f,th*.48f));drawLine(Color(0x88D9F2E9),Offset(c.x-tw*.12f,c.y+th*.22f),Offset(c.x+tw*.12f,c.y+th*.18f),1.dp.toPx()) }
    for(y in 0..29) for(x in 0..29) if((x*13+y*7)%37==0 && x>2 && y>2) {
-    val c=iso(x.toFloat(),y.toFloat()); drawCircle(Color(0xFF477A4E),tw*.15f,Offset(c.x,c.y-th*.18f));drawCircle(Color(0xFF83B66A),tw*.12f,Offset(c.x-tw*.06f,c.y-th*.25f));drawLine(Color(0xFF76583B),Offset(c.x,c.y-th*.08f),Offset(c.x,c.y+th*.32f),2.dp.toPx())
+    val c=iso(x.toFloat(),y.toFloat()); val trunk=Offset(c.x,c.y+th*.24f);drawOval(Color(0x330E2818),Offset(c.x-tw*.19f,c.y+th*.27f),Size(tw*.38f,th*.15f));drawLine(Color(0xFF765039),Offset(c.x,c.y-th*.02f),trunk,tw*.075f,cap=StrokeCap.Round);drawCircle(Color(0xFF376D45),tw*.20f,Offset(c.x,c.y-th*.20f));drawCircle(Color(0xFF4E8952),tw*.17f,Offset(c.x-tw*.10f,c.y-th*.27f));drawCircle(Color(0xFF76A95F),tw*.13f,Offset(c.x+tw*.08f,c.y-th*.31f));drawCircle(Color(0xFF8DBD6D),tw*.075f,Offset(c.x-tw*.07f,c.y-th*.39f))
    }
    buildings.sortedBy{it.x+it.y}.forEach { b -> val c=iso(b.x.toFloat(),b.y.toFloat()); val h=tw*.48f
     when(b.kind) {
@@ -245,10 +249,35 @@ data class Citizen(var name:String,var job:String,var x:Float,var y:Float,var hu
     }
    }
    people.forEachIndexed { i,p ->
-    val c=iso(p.x,p.y);drawOval(Color(0x330E251B),Offset(c.x-tw*.09f,c.y+th*.12f),Size(tw*.2f,th*.12f))
-    if(i==selected)drawCircle(Gold,tw*.18f,Offset(c.x,c.y-th*.16f),style=Stroke(2.5.dp.toPx()))
-    drawLine(if(i%2==0)Color(0xFF476C9C)else Color(0xFFB56C52),Offset(c.x,c.y-th*.25f),Offset(c.x,c.y+th*.1f),5.dp.toPx(),cap=StrokeCap.Round)
-    drawCircle(Color(0xFFF0C59A),tw*.075f,Offset(c.x,c.y-th*.35f))
+    val c=iso(p.x,p.y)
+    val phase=walk+i*.85f
+    val swing=sin(phase)*tw*.075f
+    val stride=abs(cos(phase))*th*.035f
+    val skin=listOf(Color(0xFFE9B98F),Color(0xFFD99D76),Color(0xFFF0C9A5),Color(0xFFB97855))[i%4]
+    val shirt=listOf(Color(0xFF4779A8),Color(0xFFB9674F),Color(0xFF6E9561),Color(0xFF9A78A8),Color(0xFFD0A34F),Color(0xFF477F7A))[i%6]
+    val hair=listOf(Color(0xFF49352B),Color(0xFF292725),Color(0xFF76503A),Color(0xFFB78A4E))[i%4]
+    val unit=tw*.12f
+    drawOval(Color(0x440D2418),Offset(c.x-tw*.13f,c.y+th*.19f),Size(tw*.27f,th*.14f))
+    if(i==selected){drawOval(Color(0x66F3D58A),Offset(c.x-tw*.27f,c.y+th*.08f),Size(tw*.54f,th*.30f));drawCircle(Gold,tw*.29f,Offset(c.x,c.y-th*.39f),style=Stroke(2.2.dp.toPx()))}
+    // Legs animate independently beneath the body
+    val hip=Offset(c.x,c.y+th*.015f)
+    drawLine(Color(0xFF3F4C4B),Offset(hip.x-tw*.035f,hip.y),Offset(hip.x-tw*.055f+swing,hip.y+th*.23f+stride),unit,cap=StrokeCap.Round)
+    drawLine(Color(0xFF3F4C4B),Offset(hip.x+tw*.035f,hip.y),Offset(hip.x+tw*.055f-swing,hip.y+th*.23f+stride),unit,cap=StrokeCap.Round)
+    // Shoes
+    drawLine(Color(0xFF57483C),Offset(hip.x-tw*.055f+swing,hip.y+th*.23f+stride),Offset(hip.x-tw*.10f+swing,hip.y+th*.24f+stride),unit*.9f,cap=StrokeCap.Round)
+    drawLine(Color(0xFF57483C),Offset(hip.x+tw*.055f-swing,hip.y+th*.23f+stride),Offset(hip.x+tw*.10f-swing,hip.y+th*.24f+stride),unit*.9f,cap=StrokeCap.Round)
+    // Torso, shoulders and swinging arms
+    drawRoundRect(shirt,Offset(c.x-tw*.105f,c.y-th*.24f),Size(tw*.21f,th*.31f),androidx.compose.ui.geometry.CornerRadius(tw*.055f))
+    drawLine(skin,Offset(c.x-tw*.095f,c.y-th*.20f),Offset(c.x-tw*.16f+swing,c.y+th*.045f),unit*.72f,cap=StrokeCap.Round)
+    drawLine(skin,Offset(c.x+tw*.095f,c.y-th*.20f),Offset(c.x+tw*.16f-swing,c.y+th*.045f),unit*.72f,cap=StrokeCap.Round)
+    // Neck and head with hair silhouette, ears and facial features
+    drawRoundRect(skin,Offset(c.x-tw*.025f,c.y-th*.31f),Size(tw*.05f,th*.10f),androidx.compose.ui.geometry.CornerRadius(unit*.3f))
+    drawCircle(skin,tw*.105f,Offset(c.x,c.y-th*.405f))
+    drawArc(hair,180f,180f,false,Offset(c.x-tw*.105f,c.y-th*.51f),Size(tw*.21f,th*.20f),style=Stroke(width=unit*.72f))
+    drawOval(hair,Offset(c.x-tw*.102f,c.y-th*.49f),Size(tw*.20f,th*.085f))
+    drawCircle(Color(0xFF3D3028),tw*.012f,Offset(c.x-tw*.035f,c.y-th*.405f))
+    drawCircle(Color(0xFF3D3028),tw*.012f,Offset(c.x+tw*.035f,c.y-th*.405f))
+    drawLine(Color(0xFF9A5F4A),Offset(c.x-tw*.018f,c.y-th*.365f),Offset(c.x+tw*.018f,c.y-th*.365f),1.dp.toPx(),cap=StrokeCap.Round)
    }
   }
  }
