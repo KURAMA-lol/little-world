@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -19,6 +20,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -26,161 +28,228 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlin.math.*
 
-private val forest = Color(0xFF1C3328)
-private val paper = Color(0xFFF5F1E7)
-private val leaf = Color(0xFF5B805B)
-private val gold = Color(0xFFE9BD68)
+private val Forest = Color(0xFF1D352A)
+private val Paper = Color(0xFFF5F1E7)
+private val Leaf = Color(0xFF5B805B)
+private val Gold = Color(0xFFE9BD68)
 
 class MainActivity : ComponentActivity() {
  override fun onCreate(savedInstanceState: Bundle?) {
   super.onCreate(savedInstanceState)
-  window.statusBarColor = android.graphics.Color.rgb(28,51,40)
-  window.navigationBarColor = android.graphics.Color.rgb(28,51,40)
-  setContent { MaterialTheme { Game() } }
+  window.statusBarColor = android.graphics.Color.rgb(29,53,42)
+  window.navigationBarColor = android.graphics.Color.rgb(29,53,42)
+  setContent { MaterialTheme { LittleWorld() } }
  }
 }
-enum class Tool(val label:String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
- SELECT("Select",Icons.Default.TouchApp), HOUSE("House",Icons.Default.Home), ROAD("Road",Icons.Default.Route),
- FARM("Farm",Icons.Default.Grass), PARK("Park",Icons.Default.Park), MARKET("Market",Icons.Default.Storefront)
-}
-data class Building(val x:Int,val y:Int,val type:Tool)
-data class Person(val name:String,val job:String,var x:Float,var y:Float)
 
-@Composable fun Game() {
- val ctx= androidx.compose.ui.platform.LocalContext.current
- val prefs= remember { ctx.getSharedPreferences("littleworld",0) }
- var coins by remember { mutableIntStateOf(prefs.getInt("coins",120)) }
+enum class BuildTool(val title:String,val icon:androidx.compose.ui.graphics.vector.ImageVector,val cost:Int) {
+ SELECT("Inspect",Icons.Default.TouchApp,0), HOUSE("Home",Icons.Default.Home,45),
+ ROAD("Road",Icons.Default.Route,5), FARM("Farm",Icons.Default.Grass,25),
+ PARK("Park",Icons.Default.Park,30), MARKET("Market",Icons.Default.Storefront,65),
+ WELL("Well",Icons.Default.WaterDrop,35), WORKSHOP("Workshop",Icons.Default.Build,80),
+ SCHOOL("School",Icons.Default.School,110), CLINIC("Clinic",Icons.Default.LocalHospital,125)
+}
+enum class Activity(val label:String) { IDLE("Wandering"), WORK("Working"), EAT("Eating"), REST("Resting"), SOCIAL("Socialising"), FOLLOW("Following you") }
+data class Structure(val x:Int,val y:Int,val kind:BuildTool)
+data class Citizen(var name:String,var job:String,var x:Float,var y:Float,var hunger:Float=.9f,var energy:Float=.9f,var happiness:Float=.8f,var action:Activity=Activity.IDLE)
+
+@Composable fun LittleWorld() {
+ val ctx=androidx.compose.ui.platform.LocalContext.current
+ val prefs= remember { ctx.getSharedPreferences("littleworld-save",0) }
+ var coins by remember { mutableIntStateOf(prefs.getInt("coins",160)) }
  var day by remember { mutableIntStateOf(prefs.getInt("day",1)) }
- var homes by remember { mutableIntStateOf(prefs.getInt("homes",1)) }
- var people by remember { mutableIntStateOf(prefs.getInt("people",1)) }
  var paused by remember { mutableStateOf(false) }
  var speed by remember { mutableIntStateOf(1) }
- var tool by remember { mutableStateOf(Tool.SELECT) }
+ var tool by remember { mutableStateOf(BuildTool.SELECT) }
  var selected by remember { mutableIntStateOf(0) }
- var message by remember { mutableStateOf("Your first home. A whole world ahead.") }
- val buildings= remember { mutableStateListOf(Building(5,4,Tool.HOUSE)) }
- val residents= remember { mutableStateListOf(Person("Ari","Builder",5.2f,4.2f)) }
- val stage=when { people>=45->"COUNTRY"; people>=20->"CITY"; people>=9->"TOWN"; people>=4->"VILLAGE"; else->"HOMESTEAD" }
- val goal=when(stage) { "HOMESTEAD"->"Welcome 3 more residents"; "VILLAGE"->"Grow to 9 residents"; "TOWN"->"Grow to 20 residents"; "CITY"->"Grow to 45 residents"; else->"Your country is thriving" }
+ var message by remember { mutableStateOf("A quiet patch of land. Your story starts here.") }
+ val buildings= remember { mutableStateListOf(Structure(11,8,BuildTool.HOUSE),Structure(8,9,BuildTool.WELL)) }
+ val citizens= remember { mutableStateListOf(Citizen("Ari","Founder",11.2f,8.3f)) }
+ val homes by remember { derivedStateOf { buildings.count { it.kind==BuildTool.HOUSE } } }
+ val population=citizens.size
+ val stage=when { population>=45->"COUNTRY"; population>=20->"CITY"; population>=9->"TOWN"; population>=4->"VILLAGE"; else->"HOMESTEAD" }
+ val goal=when(stage) { "HOMESTEAD"->"Build homes and welcome 3 more people"; "VILLAGE"->"Create a town with 9 residents"; "TOWN"->"Reach 20 residents to become a city"; "CITY"->"Reach 45 residents to found a country"; else->"Your country is growing. Keep building!" }
  LaunchedEffect(paused,speed) {
   while(true) {
-   delay((1800L/speed).coerceAtLeast(450L))
+   delay((1700L/speed).coerceAtLeast(350L))
    if(!paused) {
     day++
-    residents.forEach { it.x=(it.x+listOf(-.12f,.10f,.16f,-.08f).random()).coerceIn(1f,10f); it.y=(it.y+listOf(-.1f,.08f,.12f,-.06f).random()).coerceIn(1f,8f) }
-    if(day%4==0) coins+=8+people*2
-    if(day%7==0 && homes*4>people && stage!="COUNTRY") {
-     people++
-     residents.add(Person(listOf("Mira","Noah","Ira","Lena","Kai","Ravi","Tara","Milo","Asha","Theo").random(),"Resident",4f+(0..4).random(),3f+(0..3).random()))
-     message="A new resident moved in!"
+    citizens.forEachIndexed { i,p ->
+     when(p.action) {
+      Activity.WORK -> { coins+=1; p.energy=(p.energy-.012f).coerceAtLeast(0f) }
+      Activity.EAT -> p.hunger=(p.hunger+.18f).coerceAtMost(1f)
+      Activity.REST -> p.energy=(p.energy+.16f).coerceAtMost(1f)
+      Activity.SOCIAL -> p.happiness=(p.happiness+.12f).coerceAtMost(1f)
+      else -> { p.x=(p.x+listOf(-.10f,.08f,.13f,-.06f).random()).coerceIn(1f,22f); p.y=(p.y+listOf(-.08f,.07f,.1f,-.05f).random()).coerceIn(1f,16f) }
+     }
+     if(p.action!=Activity.EAT) p.hunger=(p.hunger-.006f).coerceAtLeast(0f)
+     if(p.action!=Activity.REST && p.action!=Activity.WORK) p.energy=(p.energy-.004f).coerceAtLeast(0f)
+     if(p.hunger<.25f || p.energy<.2f) p.happiness=(p.happiness-.008f).coerceAtLeast(0f)
+     if(p.hunger>.7f && p.energy>.55f) p.happiness=(p.happiness+.003f).coerceAtMost(1f)
     }
-    prefs.edit().putInt("coins",coins).putInt("day",day).putInt("homes",homes).putInt("people",people).apply()
+    if(day%4==0) coins+=3+population*2
+    if(day%6==0 && homes*4>population && population<100) {
+     val name=listOf("Mira","Noah","Ira","Lena","Kai","Ravi","Tara","Milo","Asha","Theo","Nia","Arun","Sana","Leo").filter { n->citizens.none{it.name==n} }.randomOrNull() ?: "Resident ${population+1}"
+     citizens.add(Citizen(name,"New resident",8f+(0..7).random(),7f+(0..5).random()))
+     message="$name moved into your settlement."
+    }
+    prefs.edit().putInt("coins",coins).putInt("day",day).apply()
    }
   }
  }
- Box(Modifier.fillMaxSize().background(forest)) {
+ Box(Modifier.fillMaxSize().background(Forest)) {
   Column(Modifier.fillMaxSize().padding(10.dp)) {
    Row(Modifier.fillMaxWidth().padding(bottom=8.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
     Row(verticalAlignment=Alignment.CenterVertically) {
-     Surface(color=Color(0xFFDCE9CF),shape=RoundedCornerShape(12.dp)) { Icon(Icons.Default.Public,null,tint=leaf,modifier=Modifier.padding(9.dp).size(21.dp)) }
-     Spacer(Modifier.width(9.dp))
-     Column { Text("LITTLE WORLD",color=Color.White,fontSize=16.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp); Text("A world shaped by you",color=Color(0xFFB8CDBD),fontSize=10.sp) }
+     Surface(color=Color(0xFFDCE9CF),shape=RoundedCornerShape(12.dp)) { Icon(Icons.Default.Public,null,tint=Leaf,modifier=Modifier.padding(9.dp).size(22.dp)) }
+     Spacer(Modifier.width(9.dp)); Column { Text("LITTLE WORLD",color=Color.White,fontSize=16.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp); Text("Build a life. Shape a civilisation.",color=Color(0xFFB8CDBD),fontSize=10.sp) }
     }
     Row(horizontalArrangement=Arrangement.spacedBy(7.dp),verticalAlignment=Alignment.CenterVertically) {
-     Pill("DAY "+day,Icons.Default.WbSunny); Pill(people.toString()+" people",Icons.Default.Groups); Pill(coins.toString(),Icons.Default.Paid)
-     Text(stage,color=gold,fontSize=11.sp,fontWeight=FontWeight.Bold)
+     Pill("DAY $day",Icons.Default.WbSunny); Pill("$population people",Icons.Default.Groups); Pill("$coins",Icons.Default.Paid)
+     Text(stage,color=Gold,fontSize=11.sp,fontWeight=FontWeight.Bold)
     }
    }
    Row(Modifier.weight(1f),horizontalArrangement=Arrangement.spacedBy(9.dp)) {
-    Column(Modifier.width(166.dp).fillMaxHeight().clip(RoundedCornerShape(17.dp)).background(paper).padding(11.dp)) {
-     Text("YOUR SETTLEMENT",color=leaf,fontSize=9.sp,fontWeight=FontWeight.Black,letterSpacing=1.sp)
-     Text(stage.lowercase().replaceFirstChar{it.uppercase()},color=forest,fontSize=22.sp,fontWeight=FontWeight.ExtraBold)
-     Text(goal,color=Color(0xFF68756B),fontSize=10.sp)
-     Spacer(Modifier.height(13.dp)); Text("BUILD",color=leaf,fontSize=10.sp,fontWeight=FontWeight.Black,letterSpacing=1.sp)
-     Tool.values().forEach { t ->
-      Surface(onClick={tool=t},color=if(tool==t) Color(0xFFDCE8D4) else Color.Transparent,shape=RoundedCornerShape(9.dp),modifier=Modifier.fillMaxWidth().padding(vertical=2.dp)) {
-       Row(Modifier.padding(8.dp),verticalAlignment=Alignment.CenterVertically) { Icon(t.icon,null,tint=if(tool==t) leaf else Color(0xFF68756B),modifier=Modifier.size(17.dp)); Spacer(Modifier.width(8.dp)); Text(t.label,color=forest,fontSize=11.sp,fontWeight=if(tool==t) FontWeight.Bold else FontWeight.Medium) }
+    Column(Modifier.width(158.dp).fillMaxHeight().clip(RoundedCornerShape(17.dp)).background(Paper).padding(10.dp)) {
+     Text("SETTLEMENT",color=Leaf,fontSize=9.sp,fontWeight=FontWeight.Black,letterSpacing=1.sp)
+     Text(stage.lowercase().replaceFirstChar{it.uppercase()},color=Forest,fontSize=21.sp,fontWeight=FontWeight.ExtraBold)
+     Text(goal,color=Color(0xFF68756B),fontSize=9.sp,lineHeight=12.sp)
+     Spacer(Modifier.height(9.dp)); Text("CONSTRUCTION",color=Leaf,fontSize=9.sp,fontWeight=FontWeight.Black,letterSpacing=1.sp)
+     Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(1.dp)) {
+      BuildTool.values().forEach { t ->
+       Surface(onClick={tool=t},color=if(tool==t) Color(0xFFDCE8D4) else Color.Transparent,shape=RoundedCornerShape(8.dp),modifier=Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal=6.dp,vertical=5.dp),verticalAlignment=Alignment.CenterVertically) { Icon(t.icon,null,tint=if(tool==t) Leaf else Color(0xFF68756B),modifier=Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text(t.title,color=Forest,fontSize=10.sp,fontWeight=if(tool==t) FontWeight.Bold else FontWeight.Medium); Spacer(Modifier.weight(1f)); if(t.cost>0) Text("$${t.cost}",color=Color(0xFF798278),fontSize=8.sp) }
+       }
       }
      }
-     Spacer(Modifier.weight(1f)); Text(message,color=Color(0xFF68756B),fontSize=9.sp,lineHeight=13.sp)
+     Text(message,color=Color(0xFF68756B),fontSize=8.sp,lineHeight=11.sp)
     }
     Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(17.dp))) {
-     World(buildings,residents,selected,tool) { x,y ->
-      if(tool==Tool.SELECT) {
-       if(residents.isNotEmpty()) { selected=residents.indices.minByOrNull { hypot(residents[it].x-x,residents[it].y-y) } ?: 0; val p=residents[selected]; message=p.name+" • "+p.job }
-      } else {
-       val cost=when(tool) { Tool.HOUSE->45; Tool.ROAD->5; Tool.FARM->25; Tool.PARK->30; Tool.MARKET->65; else->0 }
-       if(coins>=cost) { coins-=cost; buildings.add(Building(x.roundToInt().coerceIn(1,10),y.roundToInt().coerceIn(1,8),tool)); if(tool==Tool.HOUSE) homes++; message=tool.label+" built. Your settlement is growing." }
-       else message="Not enough coins. Let the settlement earn more."
-      }
-     }
-     Surface(color=Color(0xCCF5F1E7),shape=RoundedCornerShape(8.dp),modifier=Modifier.align(Alignment.TopStart).padding(10.dp)) { Text("  ISOMETRIC WORLD  ",color=forest,fontSize=9.sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(5.dp)) }
-     Row(Modifier.align(Alignment.BottomEnd).padding(10.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-      IconButton(onClick={paused=!paused},modifier=Modifier.clip(RoundedCornerShape(9.dp)).background(Color(0xEEF5F1E7))) { Icon(if(paused) Icons.Default.PlayArrow else Icons.Default.Pause,null,tint=forest) }
-      IconButton(onClick={speed=if(speed==1) 2 else if(speed==2) 4 else 1; message="Simulation speed: "+speed+"x"},modifier=Modifier.clip(RoundedCornerShape(9.dp)).background(Color(0xEEF5F1E7))) { Icon(Icons.Default.Speed,null,tint=forest) }
+     IsometricMap(buildings,citizens,selected,tool,onTap={x,y->
+      if(tool==BuildTool.SELECT) {
+       if(citizens.isNotEmpty()) { selected=citizens.indices.minByOrNull { hypot(citizens[it].x-x,citizens[it].y-y) } ?: 0; message="${citizens[selected].name} • ${citizens[selected].job}" }
+      } else if(coins>=tool.cost) {
+       val xx=x.roundToInt().coerceIn(1,22); val yy=y.roundToInt().coerceIn(1,16)
+       buildings.add(Structure(xx,yy,tool)); coins-=tool.cost
+       if(tool==BuildTool.HOUSE) message="A new home is ready. More residents may arrive."
+       else message="${tool.title} built."
+      } else message="Not enough coins for a ${tool.title.lowercase()}."
+     })
+     Surface(color=Color(0xCCF5F1E7),shape=RoundedCornerShape(8.dp),modifier=Modifier.align(Alignment.TopStart).padding(9.dp)) { Text("  ISOMETRIC WORLD  •  DRAG TO MOVE  •  PINCH TO ZOOM  ",color=Forest,fontSize=8.sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(5.dp)) }
+     Row(Modifier.align(Alignment.BottomEnd).padding(8.dp),horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+      MiniButton(if(paused) Icons.Default.PlayArrow else Icons.Default.Pause){paused=!paused}
+      MiniButton(Icons.Default.Speed){speed=if(speed==1) 2 else if(speed==2) 4 else 1;message="Simulation speed: ${speed}x"}
      }
     }
-    Column(Modifier.width(164.dp).fillMaxHeight().clip(RoundedCornerShape(17.dp)).background(paper).padding(11.dp)) {
-     Text("COMMUNITY",color=leaf,fontSize=10.sp,fontWeight=FontWeight.Black,letterSpacing=1.sp)
-     Spacer(Modifier.height(8.dp)); Text("Residents",color=Color(0xFF758078),fontSize=10.sp); Text(people.toString(),color=forest,fontSize=27.sp,fontWeight=FontWeight.ExtraBold)
-     Spacer(Modifier.height(8.dp)); Text("HOMES",color=Color(0xFF758078),fontSize=9.sp); Text(homes.toString(),color=forest,fontSize=18.sp,fontWeight=FontWeight.Bold)
-     Divider(Modifier.padding(vertical=8.dp),color=Color(0xFFDDE1D8))
-     Text("PEOPLE",color=leaf,fontSize=10.sp,fontWeight=FontWeight.Black,letterSpacing=1.sp)
-     residents.take(8).forEachIndexed { i,p ->
-      Surface(onClick={selected=i;message=p.name+" selected"},color=if(selected==i) Color(0xFFDCE8D4) else Color.Transparent,shape=RoundedCornerShape(8.dp),modifier=Modifier.fillMaxWidth().padding(vertical=2.dp)) {
-       Row(Modifier.padding(5.dp),verticalAlignment=Alignment.CenterVertically) { Surface(color=Color(0xFFE7C89C),shape=RoundedCornerShape(7.dp)) { Text(p.name.take(1),color=forest,fontSize=10.sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(6.dp)) }; Spacer(Modifier.width(6.dp)); Column { Text(p.name,color=forest,fontSize=10.sp,fontWeight=FontWeight.Bold); Text(p.job,color=Color(0xFF758078),fontSize=8.sp) } }
+    Column(Modifier.width(185.dp).fillMaxHeight().clip(RoundedCornerShape(17.dp)).background(Paper).padding(10.dp)) {
+     Text("PEOPLE & LIFE",color=Leaf,fontSize=10.sp,fontWeight=FontWeight.Black,letterSpacing=1.sp)
+     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { MiniStat("PEOPLE",population.toString()); MiniStat("HOMES",homes.toString()); MiniStat("JOBS",buildings.count{it.kind==BuildTool.WORKSHOP}.toString()) }
+     Divider(Modifier.padding(vertical=7.dp),color=Color(0xFFDDE1D8))
+     Text("RESIDENTS",color=Leaf,fontSize=9.sp,fontWeight=FontWeight.Black)
+     Column(Modifier.weight(1f)) {
+      citizens.take(12).forEachIndexed { i,p ->
+       Surface(onClick={selected=i;message="${p.name} selected"},color=if(selected==i) Color(0xFFDCE8D4) else Color.Transparent,shape=RoundedCornerShape(7.dp),modifier=Modifier.fillMaxWidth().padding(vertical=1.dp)) {
+        Row(Modifier.padding(5.dp),verticalAlignment=Alignment.CenterVertically) {
+         Surface(color=Color(0xFFE7C89C),shape=RoundedCornerShape(7.dp)){Text(p.name.take(1),color=Forest,fontSize=9.sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(5.dp))}
+         Spacer(Modifier.width(5.dp)); Column(Modifier.weight(1f)) { Text(p.name,color=Forest,fontSize=9.sp,fontWeight=FontWeight.Bold); Text(p.action.label,color=Color(0xFF758078),fontSize=7.sp) }
+        }
+       }
       }
      }
-     Spacer(Modifier.weight(1f)); Text("Select a resident to follow them.",color=Color(0xFF758078),fontSize=9.sp)
+     Divider(Modifier.padding(vertical=5.dp),color=Color(0xFFDDE1D8))
+     if(citizens.isNotEmpty()) {
+      val p=citizens[selected.coerceIn(0,citizens.lastIndex)]
+      Text("CONTROL: ${p.name.uppercase()}",color=Leaf,fontSize=8.sp,fontWeight=FontWeight.Black)
+      NeedBar("Hunger",p.hunger); NeedBar("Energy",p.energy); NeedBar("Mood",p.happiness)
+      Row(horizontalArrangement=Arrangement.spacedBy(4.dp),modifier=Modifier.fillMaxWidth()) {
+       ActionButton("Work",Icons.Default.Work){p.action=Activity.WORK}
+       ActionButton("Eat",Icons.Default.Restaurant){p.action=Activity.EAT}
+       ActionButton("Rest",Icons.Default.Bedtime){p.action=Activity.REST}
+      }
+      Row(horizontalArrangement=Arrangement.spacedBy(4.dp),modifier=Modifier.fillMaxWidth()) {
+       ActionButton("Social",Icons.Default.Favorite){p.action=Activity.SOCIAL}
+       ActionButton("Wander",Icons.Default.DirectionsWalk){p.action=Activity.IDLE}
+      }
+     }
     }
    }
-   Text("Tap land to build  •  Select residents to inspect  •  Your world keeps living",color=Color(0xFFB8CDBD),fontSize=9.sp,modifier=Modifier.align(Alignment.CenterHorizontally).padding(top=6.dp))
+   Text("Select a resident to control their routine  •  Build homes to attract new families  •  Save is automatic",color=Color(0xFFB8CDBD),fontSize=8.sp,modifier=Modifier.align(Alignment.CenterHorizontally).padding(top=5.dp))
   }
  }
 }
 
 @Composable fun Pill(label:String,icon:androidx.compose.ui.graphics.vector.ImageVector) {
- Surface(color=Color(0xFF30483B),shape=RoundedCornerShape(9.dp)) { Row(Modifier.padding(horizontal=8.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically) { Icon(icon,null,tint=gold,modifier=Modifier.size(12.dp)); Spacer(Modifier.width(4.dp)); Text(label,color=Color.White,fontSize=9.sp,fontWeight=FontWeight.SemiBold) } }
+ Surface(color=Color(0xFF30483B),shape=RoundedCornerShape(9.dp)) { Row(Modifier.padding(horizontal=8.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically) { Icon(icon,null,tint=Gold,modifier=Modifier.size(12.dp)); Spacer(Modifier.width(4.dp)); Text(label,color=Color.White,fontSize=9.sp,fontWeight=FontWeight.SemiBold) } }
+}
+@Composable fun MiniStat(label:String,value:String) { Column { Text(label,color=Color(0xFF758078),fontSize=7.sp); Text(value,color=Forest,fontSize=16.sp,fontWeight=FontWeight.Bold) } }
+@Composable fun NeedBar(label:String,value:Float) {
+ Column(Modifier.padding(top=3.dp)) { Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(label,color=Color(0xFF758078),fontSize=7.sp);Text("${(value*100).roundToInt()}%",color=Forest,fontSize=7.sp)}; LinearProgressIndicator(progress={value.coerceIn(0f,1f)},modifier=Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(3.dp)),color=if(value<.25f) Color(0xFFC66A55) else Leaf,trackColor=Color(0xFFE1E4DA)) }
+}
+@Composable fun ActionButton(label:String,icon:androidx.compose.ui.graphics.vector.ImageVector,action:()->Unit) {
+ Surface(onClick=action,color=Color(0xFFE6EBDD),shape=RoundedCornerShape(7.dp),modifier=Modifier.weight(1f)) { Column(Modifier.padding(vertical=5.dp),horizontalAlignment=Alignment.CenterHorizontally) { Icon(icon,null,tint=Leaf,modifier=Modifier.size(14.dp)); Text(label,color=Forest,fontSize=7.sp,fontWeight=FontWeight.SemiBold) } }
+}
+@Composable fun MiniButton(icon:androidx.compose.ui.graphics.vector.ImageVector,action:()->Unit) {
+ Surface(onClick=action,color=Color(0xEEF5F1E7),shape=RoundedCornerShape(9.dp)){Box(Modifier.size(32.dp),contentAlignment=Alignment.Center){Icon(icon,null,tint=Forest,modifier=Modifier.size(17.dp))}}
 }
 
-@Composable fun World(buildings:List<Building>,people:List<Person>,selected:Int,tool:Tool,onTap:(Float,Float)->Unit) {
- Canvas(Modifier.fillMaxSize().pointerInput(tool) { detectTapGestures { p ->
-  val tw=size.width/15f; val th=tw*.5f; val dx=p.x-size.width*.51f; val dy=p.y-size.height*.47f
-  onTap((dx/tw+dy/th+7.5f)/2f,(dy/th-dx/tw+7.5f)/2f)
- } }) {
-  val tw=size.width/15f; val th=tw*.5f; val cx=size.width*.51f; val cy=size.height*.47f
-  fun iso(x:Float,y:Float,z:Float=0f)=Offset(cx+(x-y)*tw/2f,cy+(x+y-8f)*th/2f-z)
-  drawRect(Brush.verticalGradient(listOf(Color(0xFFB9D4C3),Color(0xFF82A98D),Color(0xFF6D9679))))
-  for(y in 0..9) for(x in 0..11) {
-   val c=iso(x.toFloat(),y.toFloat()); val path=Path().apply { moveTo(c.x,c.y); lineTo(c.x+tw/2,c.y+th/2); lineTo(c.x,c.y+th); lineTo(c.x-tw/2,c.y+th/2); close() }
-   drawPath(path,if((x+y)%2==0) Color(0xFF9FC58E) else Color(0xFF96BC86)); drawPath(path,Color(0x22617F5B),style=Stroke(1.dp.toPx()))
-  }
-  for(y in 0..9) { val c=iso(11f,y.toFloat()); drawOval(Color(0xFF72B7C3),Offset(c.x-tw*.24f,c.y),Size(tw*.48f,th*.5f)) }
-  buildings.sortedBy{it.x+it.y}.forEach { b ->
-   val c=iso(b.x.toFloat(),b.y.toFloat()); val h=tw*.48f
-   when(b.type) {
-    Tool.HOUSE -> {
-     val l=Path().apply { moveTo(c.x-tw*.25f,c.y); lineTo(c.x,c.y+th*.25f); lineTo(c.x,c.y+h+th*.25f); lineTo(c.x-tw*.25f,c.y+h); close() }
-     val r=Path().apply { moveTo(c.x,c.y+th*.25f); lineTo(c.x+tw*.25f,c.y); lineTo(c.x+tw*.25f,c.y+h); lineTo(c.x,c.y+h+th*.25f); close() }
-     drawPath(l,Color(0xFFE9D7B8)); drawPath(r,Color(0xFFC9B18E))
-     val roof=Path().apply { moveTo(c.x-tw*.32f,c.y); lineTo(c.x,c.y-h*.35f); lineTo(c.x+tw*.32f,c.y); lineTo(c.x,c.y+th*.34f); close() }
-     drawPath(roof,Color(0xFFB86B4F)); drawRect(Color(0xFF7C9AA1),Offset(c.x-tw*.17f,c.y+h*.35f),Size(tw*.07f,h*.18f)); drawRect(Color(0xFF8C674B),Offset(c.x-tw*.035f,c.y+h*.48f),Size(tw*.08f,h*.28f))
-    }
-    Tool.MARKET -> { drawRect(Color(0xFFE6D6B9),Offset(c.x-tw*.22f,c.y+h*.18f),Size(tw*.44f,h*.55f)); drawRect(Color(0xFF9B6C4E),Offset(c.x-tw*.27f,c.y-h*.02f),Size(tw*.54f,h*.16f)); drawRect(Color(0xFFE6B65D),Offset(c.x-tw*.25f,c.y-h*.12f),Size(tw*.5f,h*.17f)) }
-    Tool.FARM -> { drawOval(Color(0xFF6B9B52),Offset(c.x-tw*.28f,c.y),Size(tw*.58f,th*.55f)); for(i in 0..3) drawLine(Color(0xFFE5C978),Offset(c.x-tw*.2f+i*tw*.1f,c.y+th*.12f),Offset(c.x-tw*.2f+i*tw*.1f,c.y+th*.43f),2.dp.toPx()) }
-    Tool.PARK -> { drawCircle(Color(0xFF477A4E),tw*.18f,Offset(c.x,c.y-th*.1f)); drawCircle(Color(0xFF83B86A),tw*.14f,Offset(c.x-tw*.07f,c.y-th*.2f)); drawLine(Color(0xFF795C3B),Offset(c.x,c.y-th*.1f),Offset(c.x,c.y+th*.4f),3.dp.toPx()) }
-    Tool.ROAD -> { val p=Path().apply { moveTo(c.x-tw*.25f,c.y+th*.25f); lineTo(c.x,c.y+th*.5f); lineTo(c.x+tw*.25f,c.y+th*.25f); lineTo(c.x,c.y); close() }; drawPath(p,Color(0xFFB8A88A)) }
-    else -> {}
+@Composable fun IsometricMap(buildings:List<Structure>,people:List<Citizen>,selected:Int,tool:BuildTool,onTap:(Float,Float)->Unit) {
+ var zoom by remember { mutableFloatStateOf(.9f) }
+ var pan by remember { mutableStateOf(Offset.Zero) }
+ Canvas(Modifier.fillMaxSize()
+  .pointerInput(Unit) { detectTransformGestures { _,delta,z,_ -> zoom=(zoom*z).coerceIn(.55f,2.5f); pan+=delta } }
+  .pointerInput(tool,zoom,pan) { detectTapGestures { point ->
+   val center=Offset(size.width/2f,size.height/2f)
+   val unscaled=Offset((point.x-center.x-pan.x)/zoom+center.x,(point.y-center.y-pan.y)/zoom+center.y)
+   val tw=size.width/26f; val th=tw*.5f; val dx=unscaled.x-size.width*.51f; val dy=unscaled.y-size.height*.48f
+   onTap((dx/tw+dy/th+15f)/2f,(dy/th-dx/tw+15f)/2f)
+  } }
+ ) {
+  drawRect(Brush.verticalGradient(listOf(Color(0xFFBBD7C4),Color(0xFF88B092),Color(0xFF719B7D))))
+  val center=Offset(size.width/2f,size.height/2f)
+  withTransform({ translate(pan.x,pan.y); scale(zoom,zoom,center) }) {
+   val tw=size.width/26f; val th=tw*.5f; val cx=size.width*.51f; val cy=size.height*.48f
+   fun iso(x:Float,y:Float)=Offset(cx+(x-y)*tw/2f,cy+(x+y-15f)*th/2f)
+   // 30 x 30 map with varied grass tones and subtle tile edges
+   for(y in 0..29) for(x in 0..29) {
+    val c=iso(x.toFloat(),y.toFloat())
+    val path=Path().apply { moveTo(c.x,c.y);lineTo(c.x+tw/2,c.y+th/2);lineTo(c.x,c.y+th);lineTo(c.x-tw/2,c.y+th/2);close() }
+    val edge=(x in 0..1 || y in 0..1 || x>=28 || y>=28)
+    drawPath(path,when { edge->Color(0xFF82A87D);(x*7+y*3)%11==0->Color(0xFFA9C995);(x+y)%2==0->Color(0xFF9FC58E);else->Color(0xFF96BC86) })
+    drawPath(path,Color(0x1E55734F),style=Stroke(.7.dp.toPx()))
    }
-  }
-  listOf(1 to 1,3 to 7,8 to 2,9 to 7,2 to 9,7 to 8).forEach { (x,y) ->
-   val c=iso(x.toFloat(),y.toFloat()); drawCircle(Color(0xFF477A4E),tw*.16f,Offset(c.x,c.y-th*.18f)); drawCircle(Color(0xFF78A95D),tw*.13f,Offset(c.x-tw*.07f,c.y-th*.24f)); drawLine(Color(0xFF76583B),Offset(c.x,c.y-th*.08f),Offset(c.x,c.y+th*.35f),3.dp.toPx())
-  }
-  people.forEachIndexed { i,p ->
-   val c=iso(p.x,p.y); drawOval(Color(0x330E251B),Offset(c.x-tw*.09f,c.y+th*.12f),Size(tw*.2f,th*.12f))
-   if(i==selected) drawCircle(gold,tw*.17f,Offset(c.x,c.y-th*.16f),style=Stroke(3.dp.toPx()))
-   drawLine(if(i%2==0) Color(0xFF476C9C) else Color(0xFFB56C52),Offset(c.x,c.y-th*.25f),Offset(c.x,c.y+th*.1f),5.dp.toPx(),cap=StrokeCap.Round)
-   drawCircle(Color(0xFFF0C59A),tw*.075f,Offset(c.x,c.y-th*.35f))
+   // creek and crossing
+   for(y in 0..29) { val c=iso(27f,y.toFloat());drawOval(Color(0xFF72B7C3),Offset(c.x-tw*.25f,c.y),Size(tw*.5f,th*.52f)) }
+   for(y in 0..29) for(x in 0..29) if((x*13+y*7)%37==0 && x>2 && y>2) {
+    val c=iso(x.toFloat(),y.toFloat()); drawCircle(Color(0xFF477A4E),tw*.15f,Offset(c.x,c.y-th*.18f));drawCircle(Color(0xFF83B66A),tw*.12f,Offset(c.x-tw*.06f,c.y-th*.25f));drawLine(Color(0xFF76583B),Offset(c.x,c.y-th*.08f),Offset(c.x,c.y+th*.32f),2.dp.toPx())
+   }
+   buildings.sortedBy{it.x+it.y}.forEach { b -> val c=iso(b.x.toFloat(),b.y.toFloat()); val h=tw*.48f
+    when(b.kind) {
+     BuildTool.HOUSE -> {
+      val left=Path().apply{moveTo(c.x-tw*.25f,c.y);lineTo(c.x,c.y+th*.25f);lineTo(c.x,c.y+h+th*.25f);lineTo(c.x-tw*.25f,c.y+h);close()}
+      val right=Path().apply{moveTo(c.x,c.y+th*.25f);lineTo(c.x+tw*.25f,c.y);lineTo(c.x+tw*.25f,c.y+h);lineTo(c.x,c.y+h+th*.25f);close()}
+      drawPath(left,Color(0xFFE9D7B8));drawPath(right,Color(0xFFC9B18E))
+      val roof=Path().apply{moveTo(c.x-tw*.32f,c.y);lineTo(c.x,c.y-h*.35f);lineTo(c.x+tw*.32f,c.y);lineTo(c.x,c.y+th*.34f);close()}
+      drawPath(roof,Color(0xFFB86B4F));drawRect(Color(0xFF7C9AA1),Offset(c.x-tw*.17f,c.y+h*.35f),Size(tw*.07f,h*.18f));drawRect(Color(0xFF8C674B),Offset(c.x-tw*.035f,c.y+h*.48f),Size(tw*.08f,h*.28f))
+     }
+     BuildTool.MARKET,BuildTool.WORKSHOP,BuildTool.SCHOOL,BuildTool.CLINIC -> {
+      val wall=when(b.kind){BuildTool.SCHOOL->Color(0xFFE8D6A8);BuildTool.CLINIC->Color(0xFFE7E8DE);BuildTool.WORKSHOP->Color(0xFFC9B9A2);else->Color(0xFFE6D6B9)}
+      drawRect(wall,Offset(c.x-tw*.22f,c.y+h*.18f),Size(tw*.44f,h*.55f))
+      drawRect(if(b.kind==BuildTool.CLINIC) Color(0xFFB75B55) else Color(0xFF9B6C4E),Offset(c.x-tw*.27f,c.y-h*.02f),Size(tw*.54f,h*.16f))
+      drawRect(if(b.kind==BuildTool.SCHOOL) Color(0xFFDBA94D) else Color(0xFFE6B65D),Offset(c.x-tw*.25f,c.y-h*.12f),Size(tw*.5f,h*.17f))
+     }
+     BuildTool.FARM -> {drawOval(Color(0xFF6B9B52),Offset(c.x-tw*.28f,c.y),Size(tw*.58f,th*.55f));for(i in 0..3)drawLine(Color(0xFFE5C978),Offset(c.x-tw*.2f+i*tw*.1f,c.y+th*.12f),Offset(c.x-tw*.2f+i*tw*.1f,c.y+th*.43f),2.dp.toPx())}
+     BuildTool.PARK -> {drawCircle(Color(0xFF477A4E),tw*.18f,Offset(c.x,c.y-th*.1f));drawCircle(Color(0xFF83B86A),tw*.14f,Offset(c.x-tw*.07f,c.y-th*.2f));drawLine(Color(0xFF795C3B),Offset(c.x,c.y-th*.1f),Offset(c.x,c.y+th*.4f),3.dp.toPx())}
+     BuildTool.WELL -> {drawCircle(Color(0xFFB6A58A),tw*.16f,Offset(c.x,c.y+th*.12f));drawCircle(Color(0xFF69AFC0),tw*.1f,Offset(c.x,c.y+th*.12f))}
+     BuildTool.ROAD -> {val p=Path().apply{moveTo(c.x-tw*.25f,c.y+th*.25f);lineTo(c.x,c.y+th*.5f);lineTo(c.x+tw*.25f,c.y+th*.25f);lineTo(c.x,c.y);close()};drawPath(p,Color(0xFFB8A88A))}
+     else -> {}
+    }
+   }
+   people.forEachIndexed { i,p ->
+    val c=iso(p.x,p.y);drawOval(Color(0x330E251B),Offset(c.x-tw*.09f,c.y+th*.12f),Size(tw*.2f,th*.12f))
+    if(i==selected)drawCircle(Gold,tw*.18f,Offset(c.x,c.y-th*.16f),style=Stroke(2.5.dp.toPx()))
+    drawLine(if(i%2==0)Color(0xFF476C9C)else Color(0xFFB56C52),Offset(c.x,c.y-th*.25f),Offset(c.x,c.y+th*.1f),5.dp.toPx(),cap=StrokeCap.Round)
+    drawCircle(Color(0xFFF0C59A),tw*.075f,Offset(c.x,c.y-th*.35f))
+   }
   }
  }
 }
