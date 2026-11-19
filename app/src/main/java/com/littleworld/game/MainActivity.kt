@@ -118,7 +118,142 @@ data class Citizen(var name:String,var job:String,var x:Float,var y:Float,var hu
      Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(1.dp)) {
       BuildTool.values().forEach { t ->
        Surface(onClick={tool=t},color=if(tool==t) Color(0xFFDCE8D4) else Color.Transparent,shape=RoundedCornerShape(8.dp),modifier=Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(horizontal=6.dp,vertical=5.dp),verticalAlignment=Alignment.CenterVertically) { Icon(t.icon,null,tint=if(tool==t) Leaf else Color(0xFF68756B),modifier=Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text(t.title,color=Forest,fontSize=10.sp,fontWeight=if(tool==t) FontWeight.Bold else FontWeight.Medium); Spacer(Modifier.weight(1f)); if(t.cost>0) Text("$${t.cost}",color=Color(0xFF798278),fontSize=8.sp) }
+        Row(Modifier.padding(horizontal=6.dp,vertical=5.dp),verticalAlignment=Alignment.CenterVertically) { Icon(t.icon,null,tint=if(tool==t) Leaf else Color(0xFF68756B),modifier=Modifier.size(16.dp)); Spacer(Modifier.width(6.dp)); Text(t.title,color=Forest,fontSize=10.sp,fontWeight=if(tool==t) FontWeight.Bold else FontWeight.Medium); Spacer(Modifier.weight(1f)); if(t.cost>0) Text("${',color=Color(0xFF798278),fontSize=8.sp) }
+       }
+      }
+     }
+     Text(message,color=Color(0xFF68756B),fontSize=8.sp,lineHeight=11.sp)
+    }
+    Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(17.dp))) {
+     IsometricMap(buildings,citizens,selected,tool,onTap={x,y->
+      if(tool==BuildTool.SELECT) {
+       if(citizens.isNotEmpty()) { selected=citizens.indices.minByOrNull { hypot(citizens[it].x-x,citizens[it].y-y) } ?: 0; message="${citizens[selected].name} • ${citizens[selected].job}" }
+      } else if(coins>=tool.cost) {
+       val xx=x.roundToInt().coerceIn(1,22); val yy=y.roundToInt().coerceIn(1,16)
+       buildings.add(Structure(xx,yy,tool)); coins-=tool.cost
+       if(tool==BuildTool.HOUSE) message="A new home is ready. More residents may arrive."
+       else message="${tool.title} built."
+      } else message="Not enough coins for a ${tool.title.lowercase()}."
+     })
+     Surface(color=Color(0xCCF5F1E7),shape=RoundedCornerShape(8.dp),modifier=Modifier.align(Alignment.TopStart).padding(9.dp)) { Text("  ISOMETRIC WORLD  •  DRAG TO MOVE  •  PINCH TO ZOOM  ",color=Forest,fontSize=8.sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(5.dp)) }
+     Row(Modifier.align(Alignment.BottomEnd).padding(8.dp),horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+      MiniButton(if(paused) Icons.Default.PlayArrow else Icons.Default.Pause){paused=!paused}
+      MiniButton(Icons.Default.Speed){speed=if(speed==1) 2 else if(speed==2) 4 else 1;message="Simulation speed: ${speed}x"}
+     }
+    }
+    Column(Modifier.width(185.dp).fillMaxHeight().clip(RoundedCornerShape(17.dp)).background(Paper).padding(10.dp)) {
+     Text("PEOPLE & LIFE",color=Leaf,fontSize=10.sp,fontWeight=FontWeight.Black,letterSpacing=1.sp)
+     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { MiniStat("PEOPLE",population.toString()); MiniStat("HOMES",homes.toString()); MiniStat("JOBS",buildings.count{it.kind==BuildTool.WORKSHOP}.toString()) }
+     Divider(Modifier.padding(vertical=7.dp),color=Color(0xFFDDE1D8))
+     Text("RESIDENTS",color=Leaf,fontSize=9.sp,fontWeight=FontWeight.Black)
+     Column(Modifier.weight(1f)) {
+      citizens.take(12).forEachIndexed { i,p ->
+       Surface(onClick={selected=i;message="${p.name} selected"},color=if(selected==i) Color(0xFFDCE8D4) else Color.Transparent,shape=RoundedCornerShape(7.dp),modifier=Modifier.fillMaxWidth().padding(vertical=1.dp)) {
+        Row(Modifier.padding(5.dp),verticalAlignment=Alignment.CenterVertically) {
+         Surface(color=Color(0xFFE7C89C),shape=RoundedCornerShape(7.dp)){Text(p.name.take(1),color=Forest,fontSize=9.sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(5.dp))}
+         Spacer(Modifier.width(5.dp)); Column(Modifier.weight(1f)) { Text(p.name,color=Forest,fontSize=9.sp,fontWeight=FontWeight.Bold); Text(p.action.label,color=Color(0xFF758078),fontSize=7.sp) }
+        }
+       }
+      }
+     }
+     Divider(Modifier.padding(vertical=5.dp),color=Color(0xFFDDE1D8))
+     if(citizens.isNotEmpty()) {
+      val p=citizens[selected.coerceIn(0,citizens.lastIndex)]
+      Text("CONTROL: ${p.name.uppercase()}",color=Leaf,fontSize=8.sp,fontWeight=FontWeight.Black)
+      NeedBar("Hunger",p.hunger); NeedBar("Energy",p.energy); NeedBar("Mood",p.happiness)
+      Row(horizontalArrangement=Arrangement.spacedBy(4.dp),modifier=Modifier.fillMaxWidth()) {
+       ActionButton("Work",Icons.Default.Work){p.action=Activity.WORK}
+       ActionButton("Eat",Icons.Default.Restaurant){p.action=Activity.EAT}
+       ActionButton("Rest",Icons.Default.Bedtime){p.action=Activity.REST}
+      }
+      Row(horizontalArrangement=Arrangement.spacedBy(4.dp),modifier=Modifier.fillMaxWidth()) {
+       ActionButton("Social",Icons.Default.Favorite){p.action=Activity.SOCIAL}
+       ActionButton("Wander",Icons.Default.DirectionsWalk){p.action=Activity.IDLE}
+      }
+     }
+    }
+   }
+   Text("Select a resident to control their routine  •  Build homes to attract new families  •  Save is automatic",color=Color(0xFFB8CDBD),fontSize=8.sp,modifier=Modifier.align(Alignment.CenterHorizontally).padding(top=5.dp))
+  }
+ }
+}
+
+@Composable fun Pill(label:String,icon:androidx.compose.ui.graphics.vector.ImageVector) {
+ Surface(color=Color(0xFF30483B),shape=RoundedCornerShape(9.dp)) { Row(Modifier.padding(horizontal=8.dp,vertical=6.dp),verticalAlignment=Alignment.CenterVertically) { Icon(icon,null,tint=Gold,modifier=Modifier.size(12.dp)); Spacer(Modifier.width(4.dp)); Text(label,color=Color.White,fontSize=9.sp,fontWeight=FontWeight.SemiBold) } }
+}
+@Composable fun MiniStat(label:String,value:String) { Column { Text(label,color=Color(0xFF758078),fontSize=7.sp); Text(value,color=Forest,fontSize=16.sp,fontWeight=FontWeight.Bold) } }
+@Composable fun NeedBar(label:String,value:Float) {
+ Column(Modifier.padding(top=3.dp)) { Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(label,color=Color(0xFF758078),fontSize=7.sp);Text("${(value*100).roundToInt()}%",color=Forest,fontSize=7.sp)}; LinearProgressIndicator(progress={value.coerceIn(0f,1f)},modifier=Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(3.dp)),color=if(value<.25f) Color(0xFFC66A55) else Leaf,trackColor=Color(0xFFE1E4DA)) }
+}
+@Composable fun ActionButton(label:String,icon:androidx.compose.ui.graphics.vector.ImageVector,action:()->Unit) {
+ Surface(onClick=action,color=Color(0xFFE6EBDD),shape=RoundedCornerShape(7.dp),modifier=Modifier.width(48.dp)) { Column(Modifier.padding(vertical=5.dp),horizontalAlignment=Alignment.CenterHorizontally) { Icon(icon,null,tint=Leaf,modifier=Modifier.size(14.dp)); Text(label,color=Forest,fontSize=7.sp,fontWeight=FontWeight.SemiBold) } }
+}
+@Composable fun MiniButton(icon:androidx.compose.ui.graphics.vector.ImageVector,action:()->Unit) {
+ Surface(onClick=action,color=Color(0xEEF5F1E7),shape=RoundedCornerShape(9.dp)){Box(Modifier.size(32.dp),contentAlignment=Alignment.Center){Icon(icon,null,tint=Forest,modifier=Modifier.size(17.dp))}}
+}
+
+@Composable fun IsometricMap(buildings:List<Structure>,people:List<Citizen>,selected:Int,tool:BuildTool,onTap:(Float,Float)->Unit) {
+ var zoom by remember { mutableFloatStateOf(.9f) }
+ var pan by remember { mutableStateOf(Offset.Zero) }
+ Canvas(Modifier.fillMaxSize()
+  .pointerInput(Unit) { detectTransformGestures { _,delta,z,_ -> zoom=(zoom*z).coerceIn(.55f,2.5f); pan+=delta } }
+  .pointerInput(tool,zoom,pan) { detectTapGestures { point ->
+   val center=Offset(size.width/2f,size.height/2f)
+   val unscaled=Offset((point.x-center.x-pan.x)/zoom+center.x,(point.y-center.y-pan.y)/zoom+center.y)
+   val tw=size.width/26f; val th=tw*.5f; val dx=unscaled.x-size.width*.51f; val dy=unscaled.y-size.height*.48f
+   onTap((dx/tw+dy/th+15f)/2f,(dy/th-dx/tw+15f)/2f)
+  } }
+ ) {
+  drawRect(Brush.verticalGradient(listOf(Color(0xFFBBD7C4),Color(0xFF88B092),Color(0xFF719B7D))))
+  val center=Offset(size.width/2f,size.height/2f)
+  withTransform({ translate(pan.x,pan.y); scale(zoom,zoom,center) }) {
+   val tw=size.width/26f; val th=tw*.5f; val cx=size.width*.51f; val cy=size.height*.48f
+   fun iso(x:Float,y:Float)=Offset(cx+(x-y)*tw/2f,cy+(x+y-15f)*th/2f)
+   // 30 x 30 map with varied grass tones and subtle tile edges
+   for(y in 0..29) for(x in 0..29) {
+    val c=iso(x.toFloat(),y.toFloat())
+    val path=Path().apply { moveTo(c.x,c.y);lineTo(c.x+tw/2,c.y+th/2);lineTo(c.x,c.y+th);lineTo(c.x-tw/2,c.y+th/2);close() }
+    val edge=(x in 0..1 || y in 0..1 || x>=28 || y>=28)
+    drawPath(path,when { edge->Color(0xFF82A87D);(x*7+y*3)%11==0->Color(0xFFA9C995);(x+y)%2==0->Color(0xFF9FC58E);else->Color(0xFF96BC86) })
+    drawPath(path,Color(0x1E55734F),style=Stroke(.7.dp.toPx()))
+   }
+   // creek and crossing
+   for(y in 0..29) { val c=iso(27f,y.toFloat());drawOval(Color(0xFF72B7C3),Offset(c.x-tw*.25f,c.y),Size(tw*.5f,th*.52f)) }
+   for(y in 0..29) for(x in 0..29) if((x*13+y*7)%37==0 && x>2 && y>2) {
+    val c=iso(x.toFloat(),y.toFloat()); drawCircle(Color(0xFF477A4E),tw*.15f,Offset(c.x,c.y-th*.18f));drawCircle(Color(0xFF83B66A),tw*.12f,Offset(c.x-tw*.06f,c.y-th*.25f));drawLine(Color(0xFF76583B),Offset(c.x,c.y-th*.08f),Offset(c.x,c.y+th*.32f),2.dp.toPx())
+   }
+   buildings.sortedBy{it.x+it.y}.forEach { b -> val c=iso(b.x.toFloat(),b.y.toFloat()); val h=tw*.48f
+    when(b.kind) {
+     BuildTool.HOUSE -> {
+      val left=Path().apply{moveTo(c.x-tw*.25f,c.y);lineTo(c.x,c.y+th*.25f);lineTo(c.x,c.y+h+th*.25f);lineTo(c.x-tw*.25f,c.y+h);close()}
+      val right=Path().apply{moveTo(c.x,c.y+th*.25f);lineTo(c.x+tw*.25f,c.y);lineTo(c.x+tw*.25f,c.y+h);lineTo(c.x,c.y+h+th*.25f);close()}
+      drawPath(left,Color(0xFFE9D7B8));drawPath(right,Color(0xFFC9B18E))
+      val roof=Path().apply{moveTo(c.x-tw*.32f,c.y);lineTo(c.x,c.y-h*.35f);lineTo(c.x+tw*.32f,c.y);lineTo(c.x,c.y+th*.34f);close()}
+      drawPath(roof,Color(0xFFB86B4F));drawRect(Color(0xFF7C9AA1),Offset(c.x-tw*.17f,c.y+h*.35f),Size(tw*.07f,h*.18f));drawRect(Color(0xFF8C674B),Offset(c.x-tw*.035f,c.y+h*.48f),Size(tw*.08f,h*.28f))
+     }
+     BuildTool.MARKET,BuildTool.WORKSHOP,BuildTool.SCHOOL,BuildTool.CLINIC -> {
+      val wall=when(b.kind){BuildTool.SCHOOL->Color(0xFFE8D6A8);BuildTool.CLINIC->Color(0xFFE7E8DE);BuildTool.WORKSHOP->Color(0xFFC9B9A2);else->Color(0xFFE6D6B9)}
+      drawRect(wall,Offset(c.x-tw*.22f,c.y+h*.18f),Size(tw*.44f,h*.55f))
+      drawRect(if(b.kind==BuildTool.CLINIC) Color(0xFFB75B55) else Color(0xFF9B6C4E),Offset(c.x-tw*.27f,c.y-h*.02f),Size(tw*.54f,h*.16f))
+      drawRect(if(b.kind==BuildTool.SCHOOL) Color(0xFFDBA94D) else Color(0xFFE6B65D),Offset(c.x-tw*.25f,c.y-h*.12f),Size(tw*.5f,h*.17f))
+     }
+     BuildTool.FARM -> {drawOval(Color(0xFF6B9B52),Offset(c.x-tw*.28f,c.y),Size(tw*.58f,th*.55f));for(i in 0..3)drawLine(Color(0xFFE5C978),Offset(c.x-tw*.2f+i*tw*.1f,c.y+th*.12f),Offset(c.x-tw*.2f+i*tw*.1f,c.y+th*.43f),2.dp.toPx())}
+     BuildTool.PARK -> {drawCircle(Color(0xFF477A4E),tw*.18f,Offset(c.x,c.y-th*.1f));drawCircle(Color(0xFF83B86A),tw*.14f,Offset(c.x-tw*.07f,c.y-th*.2f));drawLine(Color(0xFF795C3B),Offset(c.x,c.y-th*.1f),Offset(c.x,c.y+th*.4f),3.dp.toPx())}
+     BuildTool.WELL -> {drawCircle(Color(0xFFB6A58A),tw*.16f,Offset(c.x,c.y+th*.12f));drawCircle(Color(0xFF69AFC0),tw*.1f,Offset(c.x,c.y+th*.12f))}
+     BuildTool.ROAD -> {val p=Path().apply{moveTo(c.x-tw*.25f,c.y+th*.25f);lineTo(c.x,c.y+th*.5f);lineTo(c.x+tw*.25f,c.y+th*.25f);lineTo(c.x,c.y);close()};drawPath(p,Color(0xFFB8A88A))}
+     else -> {}
+    }
+   }
+   people.forEachIndexed { i,p ->
+    val c=iso(p.x,p.y);drawOval(Color(0x330E251B),Offset(c.x-tw*.09f,c.y+th*.12f),Size(tw*.2f,th*.12f))
+    if(i==selected)drawCircle(Gold,tw*.18f,Offset(c.x,c.y-th*.16f),style=Stroke(2.5.dp.toPx()))
+    drawLine(if(i%2==0)Color(0xFF476C9C)else Color(0xFFB56C52),Offset(c.x,c.y-th*.25f),Offset(c.x,c.y+th*.1f),5.dp.toPx(),cap=StrokeCap.Round)
+    drawCircle(Color(0xFFF0C59A),tw*.075f,Offset(c.x,c.y-th*.35f))
+   }
+  }
+ }
+}
+}${t.cost}",color=Color(0xFF798278),fontSize=8.sp) }
        }
       }
      }
