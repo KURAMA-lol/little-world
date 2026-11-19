@@ -6,8 +6,15 @@ plugins {
 android {
  namespace = "com.littleworld.game"
  compileSdk = 35
- defaultConfig { applicationId = "com.littleworld.game"; minSdk = 26; targetSdk = 35; versionCode = 1; versionName = "0.1.0" }
- buildTypes { release { isMinifyEnabled = false } }
+ defaultConfig { applicationId = "com.littleworld.game"; minSdk = 26; targetSdk = 35; versionCode = 2; versionName = "0.2.2" }
+ buildTypes {
+  release {
+   isMinifyEnabled = false
+   // Sign CI release APKs so they can be installed directly.
+   // Use a private upload key before publishing to Google Play.
+   signingConfig = signingConfigs.getByName("debug")
+  }
+ }
  compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
  kotlinOptions { jvmTarget = "17" }
  buildFeatures { compose = true }
